@@ -1,9 +1,10 @@
 import numpy as np
 from time import time
-from matplotlib import pyplot as plt
-from numba import cuda, jit
+from numba import cuda
 from glob import glob
 from PIL import Image
+import pygame
+
 
 class Board(np.ndarray):
     """
@@ -23,9 +24,24 @@ class Board(np.ndarray):
         if try_cuda and not self.use_gpu:
             print("CUDA is not available, defaulting to CPU instead.")
 
+    def updateCPU(self):
+        """
+        Ticks the board to compute next state using cpu (slower but works everywhere).
+        """
+        for i, j in np.ndindex(self.shape):
+            alive_count = self.countAlive(i, j)
+            self.new_board[i, j] = alive_count in [2, 3] if self[i, j] else alive_count == 3
+        self[...] = self.new_board
+
+    def countAlive(self, i: int, j: int) -> bool:
+        """
+        Get the amount of alive neighbors of a cell.
+        """
+        return self[i - 1:i + 2, j - 1:j + 2].sum() - self[i, j]
+
     @staticmethod
     @cuda.jit
-    def updateGpu(board, new_board, width, height):
+    def updateGpu(board, new_board, width: int, height: int):
         """
         Ticks part of the board to compute next state using cuda.
         """
@@ -37,15 +53,6 @@ class Board(np.ndarray):
                     alive_count += board[x + i, y + j]
             alive_count -= board[x, y]
             new_board[x, y] = alive_count in [2, 3] if board[x, y] else alive_count == 3
-
-    def updateCPU(self):
-        """
-        Ticks the board to compute next state using cpu (slower but works everywhere).
-        """
-        for i, j in np.ndindex(self.shape):
-            alive_count = self[i - 1:i + 2, j - 1:j + 2].sum() - self[i, j]
-            self.new_board[i, j] = alive_count in [2, 3] if self[i, j] else alive_count == 3
-        self[...] = self.new_board
 
     def tick(self):
         """
@@ -65,17 +72,42 @@ class Board(np.ndarray):
         else:
             self.updateCPU()
 
-    def countAlive(self, i: int, j: int) -> bool:
+    @staticmethod
+    @cuda.jit
+    def grayscale(board, gray, width: int, height: int):
         """
-        Get the amount of alive neighbors of a cell.
+        Converts the board to a grayscale image.
         """
-        return self[i - 1:i + 2, j - 1:j + 1].sum() - self[i, j]
+        x, y = cuda.grid(2)
+        if 0 < x < width - 1 and 0 < y < height - 1:
+            gray[x, y] = 255 if board[x, y] else 0
 
+    def getImage(self) -> Image:
+        """
+        Converts the board to an image.
+        """
+        # first convert the board to a grayscale image
+        if self.use_gpu:
+            d_board = cuda.to_device(self)
+            d_gray = cuda.device_array(self.shape, dtype=np.uint8)
+
+            threads_per_blocks = (16, 16)
+            blocks_per_grid = (
+                (self.shape[0] + threads_per_blocks[0] - 1) // threads_per_blocks[0],
+                (self.shape[1] + threads_per_blocks[1] - 1) // threads_per_blocks[1]
+            )
+            self.grayscale[blocks_per_grid, threads_per_blocks](d_board, d_gray, *self.shape)
+            img_data = d_gray.copy_to_host()
+        else:
+            img_data = self.astype(np.uint8) * 255
+
+        # then convert the numpy array to an image using PIL
+        return Image.fromarray(img_data, mode='L')
 
 
 if __name__ == "__main__":
-    rows, cols = 126, 126
-    board = Board(False, rows, cols)
+    rows, cols = 1024, 1024
+    board = Board(True, rows, cols)
 
     # Add Glider to board at position (10, 100)
     board[10:13, 100:103] = [[0, 1, 0], [0, 0, 1], [1, 1, 1]]
@@ -88,8 +120,7 @@ if __name__ == "__main__":
     board[102:104, 102:104] = [[0, 1], [1, 1]]
 
     # Save initial state
-    plt.imshow(board, cmap='gray')
-    plt.savefig(f'output/init.png')
+    board.getImage().save(f'output/init.png')
     # start timing
     start = time()
 
@@ -101,8 +132,7 @@ if __name__ == "__main__":
         # Check if Glider returned to original position
 
         start_save = time()
-        plt.imshow(board, cmap='gray')
-        plt.savefig(f'output/{i:03}.png')
+        board.getImage().save(f'output/{i:03}.png')
         print(f'Saved {i}.png in {time() - start_save}s')
 
     # end timing
@@ -113,6 +143,5 @@ if __name__ == "__main__":
     out = 'output/game_of_life.gif'
     images = [Image.open(img) for img in files]
     images[0].save('output/game_of_life.gif', save_all=True, append_images=images[1:], optimize=False, duration=100, loop=0)
-
 
     print(f'Done in {end - start}s!')

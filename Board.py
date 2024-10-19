@@ -3,6 +3,7 @@ from time import time
 from numba import cuda
 from glob import glob
 from PIL import Image
+from typing import Callable
 import pygame
 
 
@@ -59,16 +60,12 @@ class Board(np.ndarray):
         Ticks the board to compute next state.
         """
         if self.use_gpu:  # use cuda if available (determined at init)
-            d_board = cuda.to_device(self)
-            d_new_board = cuda.to_device(self.new_board)
-
-            threads_per_blocks = (16, 16)
-            blocks_per_grid = (
-                (self.shape[0] + threads_per_blocks[0] - 1) // threads_per_blocks[0],
-                (self.shape[1] + threads_per_blocks[1] - 1) // threads_per_blocks[1]
+            self[...] = Board.runOnGpu(
+                cuda.to_device(self),
+                cuda.to_device(self.new_board),
+                self.shape,
+                Board.updateGpu
             )
-            self.updateGpu[blocks_per_grid, threads_per_blocks](d_board, d_new_board, *self.shape)
-            self[...] = d_new_board.copy_to_host()
         else:
             self.updateCPU()
 
@@ -88,25 +85,34 @@ class Board(np.ndarray):
         """
         # first convert the board to a grayscale image
         if self.use_gpu:
-            d_board = cuda.to_device(self)
-            d_gray = cuda.device_array(self.shape, dtype=np.uint8)
-
-            threads_per_blocks = (16, 16)
-            blocks_per_grid = (
-                (self.shape[0] + threads_per_blocks[0] - 1) // threads_per_blocks[0],
-                (self.shape[1] + threads_per_blocks[1] - 1) // threads_per_blocks[1]
+            img_data = Board.runOnGpu(
+                cuda.to_device(self),
+                cuda.device_array(self.shape, dtype=np.uint8),
+                self.shape,
+                Board.grayscale
             )
-            self.grayscale[blocks_per_grid, threads_per_blocks](d_board, d_gray, *self.shape)
-            img_data = d_gray.copy_to_host()
         else:
             img_data = self.astype(np.uint8) * 255
 
         # then convert the numpy array to an image using PIL
         return Image.fromarray(img_data, mode='L')
 
+    @staticmethod
+    def runOnGpu(src, dest, shape: tuple[int, ...], func: Callable) -> np.ndarray:
+        """
+        Runs a function on the GPU.
+        """
+        threads_per_blocks = (16, 16)
+        blocks_per_grid = (
+            (shape[0] + threads_per_blocks[0] - 1) // threads_per_blocks[0],
+            (shape[1] + threads_per_blocks[1] - 1) // threads_per_blocks[1]
+        )
+        func[blocks_per_grid, threads_per_blocks](src, dest, *shape)
+        return dest.copy_to_host()
+
 
 if __name__ == "__main__":
-    rows, cols = 1024, 1024
+    rows, cols = 512, 512
     board = Board(True, rows, cols)
 
     # Add Glider to board at position (10, 100)
@@ -125,7 +131,7 @@ if __name__ == "__main__":
     start = time()
 
     # Make 100 ticks while saving the results as animation using matplotlib
-    for i in range(10):
+    for i in range(200):
         start_tick = time()
         board.tick()
         print(f'Tick {i} done! in {time() - start_tick}s')

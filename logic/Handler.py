@@ -11,6 +11,7 @@ class LogicHandler(threading.Thread):
     running: bool
     tick_rate: int
     current_tps: float
+    paused: threading.Lock
 
     def __init__(self, board: Board, tick_rate: int = 10):
         super().__init__()
@@ -19,6 +20,7 @@ class LogicHandler(threading.Thread):
         self.tick_rate = tick_rate
         self.current_tps = 0
         self.presets = [None]
+        self.paused = threading.Lock()
 
         self.data_path = Path(__file__).parent / 'data'
         self.__loadPresets__()
@@ -29,6 +31,10 @@ class LogicHandler(threading.Thread):
             self.board.tick()
             clock.tick(self.tick_rate)
             self.current_tps = clock.get_fps()
+            if self.paused.locked():  # if paused, wait for the release rather than busy waiting
+                self.current_tps = 0
+                self.paused.acquire()
+                self.paused.release()
 
     def __loadPresets__(self) -> None:
         for file in self.data_path.glob('*.preset'):
@@ -51,23 +57,57 @@ class LogicHandler(threading.Thread):
         self.presets.append(preset)
         preset.save(self.data_path)
 
-    def removePreset(self, name: str) -> None:
+    def deletePreset(self, name: str):
+        """
+        Delete a preset.
+        :param name:
+        :return:
+        """
         preset = next((p for p in self.presets if p.name == name), None)
         if preset is not None:
+            preset.delete()
             self.presets.remove(preset)
-
             del preset
 
     def presetSize(self, board_ratio: float = 1) -> tuple[int, ...]:
+        """
+        Get the size of the current preset.
+        :param board_ratio:
+        :return:
+        """
         if self.preset is None:
             return 0, 0
         return tuple(int(x * board_ratio) for x in self.preset.getSize())
 
     def nextPreset(self):
+        """
+        Iterate to the next preset.
+        """
         if len(self.presets) <= 1:
             return
         self.presets.append(self.presets.pop(0))
 
     @property
     def preset(self):
+        """
+        Get the current preset.
+        """
         return self.presets[0]
+
+    def resume(self):
+        """
+        Resume the game by releasing the pause lock.
+        """
+        self.paused.release()
+
+    def pause(self):
+        """
+        Pause the game by acquiring the pause lock.
+        """
+        self.paused.acquire()
+
+    def isPaused(self) -> bool:
+        """
+        Returns true if lock is blocking runner
+        """
+        return self.paused.locked()

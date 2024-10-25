@@ -1,9 +1,8 @@
 import pygame
 from logic.Board import Board
 from logic.Handler import LogicHandler
-from render.Utils import fitRatio
-from pathlib import Path
-from render.Components import Container, BoardRender, TpsRender, BoldStaticTextRender, Button
+from render.Utils import fitRatio, centerCoord
+from render.Components import Container, BoardRender, TpsRender, BoldStaticTextRender, Button, TimeBarRender, ASSETS_PATH
 import win32api
 import win32con
 import win32gui
@@ -28,7 +27,8 @@ if __name__ == '__main__':
     win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE,
                            win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE) | win32con.WS_EX_LAYERED)
     # Set window transparency color
-    win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(*(0, 0, 0)), 0, win32con.LWA_COLORKEY)
+    BACKGROUND_COLOR = (12, 90, 1)
+    win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(*BACKGROUND_COLOR), 0, win32con.LWA_COLORKEY)
 
     board = Board(True, True, 370, 370)
     Board.background_color = 33
@@ -40,14 +40,13 @@ if __name__ == '__main__':
     logic = LogicHandler(board)
 
     # create the main container
-    assets = Path(__file__).parent / 'assets'
-    background = assets / 'background.png'
-    main = Container.fromScreen(screen, background)
+    main = Container.fromScreen(screen, ASSETS_PATH / 'background.png')
     main.add(BoardRender((19, 70), (370, 370), main, board))
     tps_render = TpsRender((19, 70), main, logic, 12)
     main.add(tps_render)
     main.add(BoldStaticTextRender((6, 6), main, "Game of Life", (255, 255, 255), 26))
-    main.add(Button((739, 3), main, assets / 'close.png', kill))
+    main.add(Button((739, 3), main, ASSETS_PATH / 'close.png', kill))
+    main.add(TimeBarRender(centerCoord((15, 447), (378, 18), (99, 18)), main, logic))
 
     logic.start()
     while RUNNING:
@@ -57,6 +56,7 @@ if __name__ == '__main__':
             pass  # consume remaining events
 
         # display the main container
+        screen.fill(BACKGROUND_COLOR)
         main.render(screen)
 
         # flip to refresh the screen
@@ -64,4 +64,6 @@ if __name__ == '__main__':
         clock.tick(144)
 
     logic.running = False
+    if logic.isPaused():
+        logic.resume()
     pygame.quit()

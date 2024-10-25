@@ -57,11 +57,6 @@ class Container(Child):
         for child in self.children[::-1]:
             child.handleEvents()
 
-    def onClick(self):
-        x, y = pygame.mouse.get_pos()
-        for min_x, min_y in self.children:  # TODO
-            pass
-
     def add(self, child):
         self.children.append(child)
 

@@ -162,6 +162,7 @@ class Preset(Board):
     Stores a preset for the Game of Life. Which is a smaller board with a specific pattern.
     """
     name: str
+    saved_location: Path
 
     def __new__(cls, src: Path | Board, _: str):
         """
@@ -178,10 +179,12 @@ class Preset(Board):
             cropped = src[max(min(x) - 1, 0):max(x) + 2, max(min(y) - 1, 0):max(y) + 2]
             return cropped.view(cls)
 
-    def __init__(self, _: Path | Board, name: str):
+    def __init__(self, src: Path | Board, name: str):
         super().__init__(False)
         self.name = name
         self.getImage(True)
+        if isinstance(src, Path):
+            self.saved_location = src
 
     def save(self, path: Path):
         """
@@ -192,4 +195,12 @@ class Preset(Board):
         path = path / f'{self.name}.preset'
         print(f'Saving preset to {path}')
         np.savetxt(path, self, fmt='%d')
+
+    def delete(self):
+        """
+        Delete the preset file.
+        """
+        self.saved_location.unlink()
+        del self.saved_location
+        print(f'Deleted preset {self.name}')
 

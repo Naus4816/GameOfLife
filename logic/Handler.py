@@ -22,7 +22,7 @@ class LogicHandler(threading.Thread):
         self.presets = [None]
         self.paused = threading.Lock()
 
-        self.data_path = Path(__file__).parent / 'data'
+        self.data_path = Path(__file__).parent.parent / 'data'
         self.__loadPresets__()
 
     def run(self):

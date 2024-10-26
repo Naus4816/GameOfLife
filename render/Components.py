@@ -1,9 +1,10 @@
 import pygame
 import math
 from pathlib import Path
-from render.Utils import fitRatio, centerCoord
-from logic.Board import Board
+from render.Utils import fitRatio, centerCoord, mouseIn
+from logic.Board import Board, Preset
 from logic.Handler import LogicHandler
+from threading import Thread
 
 ASSETS_PATH = Path(__file__).parent.parent / 'assets'
 FONT_PATH: Path = ASSETS_PATH / 'font.ttf'
@@ -27,17 +28,29 @@ class Child:
         pass
 
 
-class Container(Child):
+class ScaledChild(Child):
+    ratio: float
+    content_size: tuple[int, ...]
+
+    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...],
+                 content_size: tuple[int, ...], parent: 'Container'):
+        self.ratio = fitRatio(size, content_size)
+        self.content_size = content_size
+        content_size = tuple(math.floor(s * self.ratio) for s in content_size)
+        super().__init__(coord, content_size, parent)
+        self.ratio *= parent.ratio
+        self.coord = centerCoord(self.coord, tuple(math.floor(s * parent.ratio) for s in size), self.size)
+
+
+class Container(ScaledChild):
     background: pygame.Surface
     children: list[Child]
-    ratio: float
 
     def __init__(self, coord: tuple[int, ...], size: tuple[int, ...], parent: 'Container', path: Path):
         bg = pygame.image.load(str(path))
-        self.ratio = fitRatio(size, bg.get_size())
+        super().__init__(coord, size, bg.get_size(), parent)
         self.background = pygame.transform.scale(bg, tuple(int(x * self.ratio) for x in bg.get_size()))
         self.children = []
-        super().__init__(coord, self.background.get_size(), parent)
         self.coord = centerCoord(self.coord, size, self.background.get_size())
 
     @staticmethod
@@ -155,23 +168,17 @@ class Button(Child):
         return pygame.image.load(path.parent / (path.stem + f'_{variant}' + path.suffix))
 
     def handleEvents(self):
-        if not self.mouseIn() or self.disabled:
+        if not mouseIn(self.coord, self.size) or self.disabled:
             return
         for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
             if event.button == 1:
                 self.callback()
 
-    def mouseIn(self):
-        x, y = pygame.mouse.get_pos()
-        min_x, min_y = self.coord
-        max_x, max_y = tuple(c + s for c, s in zip(self.coord, self.size))
-        return min_x <= x <= max_x and min_y <= y <= max_y
-
     @property
     def background(self) -> pygame.Surface:
         if self.disable and self.disabled:
             return self.disable
-        if self.mouseIn() and not self.disabled:
+        if mouseIn(self.coord, self.size) and not self.disabled:
             return self.click if pygame.mouse.get_pressed()[0] and self.click is not None else self.hover
         return self.base
 
@@ -191,7 +198,7 @@ class ToggleButton(Button):
         self.on_hover = pygame.transform.scale(Button.getVariant(path, 'on_hover'), self.size)
 
     def handleEvents(self):
-        if not self.mouseIn() or self.disabled:
+        if not mouseIn(self.coord, self.size) or self.disabled:
             return
         for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
             if event.button == 1:
@@ -200,7 +207,7 @@ class ToggleButton(Button):
 
     @property
     def background(self) -> pygame.Surface:
-        if self.mouseIn() and not self.disabled:
+        if mouseIn(self.coord, self.size) and not self.disabled:
             return self.on_hover if self.on else self.hover
         return self.on_base if self.on else self.base
 
@@ -209,6 +216,27 @@ class TimeBarRender(Child):
     logic: LogicHandler
     # store children in a list with play_pause, step, speed_1, speed_2, speed_3, supper_fast
     children: tuple[ToggleButton, Button, ToggleButton, ToggleButton, ToggleButton, ToggleButton]
+
+    def __init__(self, coord: tuple[int, ...], parent: 'Container', logic: LogicHandler):
+        self.logic = logic
+        x, y = coord
+        self.children = (
+            ToggleButton((x, y), parent, ASSETS_PATH / 'play_pause.png', self.toggle, True),
+            Button((x + 21, y), parent, ASSETS_PATH / 'step.png', self.step, False, True),
+            ToggleButton((x + 42, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(5), True),
+            ToggleButton((x + 55, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(10), True),
+            ToggleButton((x + 68, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(20)),
+            ToggleButton((x + 81, y), parent, ASSETS_PATH / 'super_speed.png', self.speedSetter(100))
+        )
+        super().__init__(coord, (99, 18), parent)
+
+    def handleEvents(self):
+        for child in self.children:
+            child.handleEvents()
+
+    def render(self, screen: pygame.Surface):
+        for child in self.children:
+            child.render(screen)
 
     def toggle(self, on: bool):
         self.setSpeed(self.logic.tick_rate if on else 0)
@@ -254,27 +282,6 @@ class TimeBarRender(Child):
             if x or self.logic.tick_rate > tick_rate else \
             self.setSpeed(next(s for s in [100, 20, 10, 5, 0] if s < tick_rate))
 
-    def __init__(self, coord: tuple[int, ...], parent: 'Container', logic: LogicHandler):
-        self.logic = logic
-        x, y = coord
-        self.children = (
-            ToggleButton((x, y), parent, ASSETS_PATH / 'play_pause.png', self.toggle, True),
-            Button((x + 21, y), parent, ASSETS_PATH / 'step.png', self.step, False, True),
-            ToggleButton((x + 42, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(5), True),
-            ToggleButton((x + 55, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(10), True),
-            ToggleButton((x + 68, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(20)),
-            ToggleButton((x + 81, y), parent, ASSETS_PATH / 'super_speed.png', self.speedSetter(100))
-        )
-        super().__init__(coord, (99, 18), parent)
-
-    def handleEvents(self):
-        for child in self.children:
-            child.handleEvents()
-
-    def render(self, screen: pygame.Surface):
-        for child in self.children:
-            child.render(screen)
-
 
 class TpsRender(BoldDynamicTextRender):
     logic: LogicHandler
@@ -284,14 +291,66 @@ class TpsRender(BoldDynamicTextRender):
         super().__init__(coord, parent, (255, 255, 255), lambda: f'{self.logic.current_tps:.2f} TPS', font_size)
 
 
-class BoardRender(Child):
-    board: Board
+class BoardRender(ScaledChild):
+    board: Board | Preset
 
-    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...], parent: 'Container', board: Board):
+    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...],
+                 parent: 'Container', board: Board | Preset):
         self.board = board
-        super().__init__(coord, size, parent)
+        super().__init__(coord, size, board.getSize(), parent)
+        parent.add(BoldStaticTextRender(  # add title to parent with relative pos
+            (coord[0]-4, coord[1]-25), parent,
+            board.name if isinstance(board, Preset) else 'New Board',
+            (255, 255, 255), 18)
+        )
 
     def render(self, screen: pygame.Surface):
         image = self.board.getImage()
         pyg_image = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
         screen.blit(pygame.transform.scale(pyg_image, self.size), self.coord)
+
+
+class PresetRender(BoardRender):
+    referer: 'BoardRender'
+
+    def __init__(self, parent: 'Container', referer: 'BoardRender', preset: Preset):
+        self.referer = referer
+        super().__init__((0, 0), preset.getSize(), parent, preset)
+        self.ratio = referer.ratio
+        self.size = tuple(math.floor(s * self.ratio) for s in preset.getSize())
+
+    def handleEvents(self):
+        if not mouseIn(*self.placement_box):
+            return
+        for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
+            if event.button == 1:
+                Thread(target=lambda: self.referer.board.paste(self.board, *self.relative_coord)).start()
+
+    def render(self, screen: pygame.Surface):
+        if not mouseIn(*self.placement_box):
+            return
+        image = self.board.getImage()
+        pyg_image = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
+        screen.blit(pygame.transform.scale(pyg_image, self.size), self.snap_coord)
+
+    @property
+    def placement_box(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        p_x, p_y = self.referer.coord
+        p_w, p_h = self.referer.size
+        width, height = self.size
+        return (p_x + width, p_y + height), (p_w - width, p_h - height)
+
+    @property
+    def relative_coord(self):
+        x, y = pygame.mouse.get_pos()
+        p_x, p_y = self.referer.coord
+        ratio = self.referer.ratio
+        c_w, c_h = self.board.getSize()
+        return math.floor((x - p_x) / ratio) - c_w, math.floor((y - p_y) / ratio) - c_h
+
+    @property
+    def snap_coord(self):
+        p_x, p_y = self.referer.coord
+        ratio = self.referer.ratio
+        r_x, r_y = self.relative_coord
+        return math.ceil(r_x * ratio) + p_x, math.ceil(r_y * ratio) + p_y

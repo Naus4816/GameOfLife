@@ -3,6 +3,7 @@ from numba import cuda
 from PIL import Image
 from typing import Callable
 from pathlib import Path
+from threading import Lock
 
 
 class Board(np.ndarray):
@@ -13,6 +14,7 @@ class Board(np.ndarray):
     image: Image
     new_board: np.ndarray
     background_color: int = 0
+    tick_lock: Lock
 
     def __new__(cls, _: bool, random: bool, height: int, width: int):
         width, height = width + 2, height + 2
@@ -24,6 +26,8 @@ class Board(np.ndarray):
     def __init__(self, try_cuda: bool = True, *args, **kwargs):
         # Create second array to store the next state and be space efficient
         self.new_board = np.zeros_like(self, dtype=bool)
+        # Create a lock to make sure the board is not updated while ticking
+        self.tick_lock = Lock()
 
         self.image = None
         self.use_gpu = try_cuda and cuda.is_available()
@@ -64,6 +68,7 @@ class Board(np.ndarray):
         """
         Ticks the board to compute next state.
         """
+        self.tick_lock.acquire()
         if self.use_gpu:  # use cuda if available (determined at init)
             self[...] = Board.runOnGpu(
                 cuda.to_device(self),
@@ -74,6 +79,7 @@ class Board(np.ndarray):
         else:
             self.updateCPU()
         self.refresh()
+        self.tick_lock.release()
 
     @staticmethod
     @cuda.jit
@@ -137,6 +143,15 @@ class Board(np.ndarray):
         )
         func[blocks_per_grid, threads_per_blocks](src, dest, *shape, *args)
         return dest.copy_to_host()
+
+    def paste(self, other: 'Board', y: int, x: int):
+        """
+        Paste another board on top of this one.
+        """
+        self.tick_lock.acquire()
+        self[x:x + other.shape[0], y:y + other.shape[1]] = other
+        self.refresh()
+        self.tick_lock.release()
 
     def getSize(self) -> tuple[int, int]:
         """

@@ -1,8 +1,8 @@
 import pygame
 from logic.Board import Board
 from logic.Handler import LogicHandler
-from render.Utils import fitRatio, centerCoord
-from render.Components import Container, BoardRender, TpsRender, BoldStaticTextRender, Button, TimeBarRender, ASSETS_PATH
+from render.Utils import centerCoord
+from render.Components import Container, BoardRender, PresetRender, TpsRender, BoldStaticTextRender, Button, TimeBarRender, ASSETS_PATH
 import win32api
 import win32con
 import win32gui
@@ -18,7 +18,7 @@ def kill():
 if __name__ == '__main__':
     pygame.init()
     pygame.display.set_caption("Game of Life")
-    screen = pygame.display.set_mode((1532, 960), pygame.NOFRAME, pygame.SRCALPHA)
+    screen = pygame.display.set_mode((1532, 960), pygame.NOFRAME)
     clock = pygame.time.Clock()
 
     # Make window transparent see https://stackoverflow.com/questions/550001/fully-transparent-windows-in-pygame
@@ -30,23 +30,23 @@ if __name__ == '__main__':
     BACKGROUND_COLOR = (12, 90, 1)
     win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(*BACKGROUND_COLOR), 0, win32con.LWA_COLORKEY)
 
-    board = Board(True, True, 370, 370)
+    board = Board(True, False, 185, 185)
     Board.background_color = 33
-    ratio = fitRatio(screen.get_size(), board.getSize())
-    new_size = tuple(int(x*ratio) for x in board.getSize())
 
     # initialise the logic handler with the board
     # running = True
     logic = LogicHandler(board)
+    logic.nextPreset()
 
     # create the main container
     main = Container.fromScreen(screen, ASSETS_PATH / 'background.png')
-    main.add(BoardRender((19, 70), (370, 370), main, board))
-    tps_render = TpsRender((19, 70), main, logic, 12)
-    main.add(tps_render)
+    board_render = BoardRender((19, 70), (370, 370), main, board)
+    main.add(board_render)
+    main.add(TpsRender((19, 70), main, logic, 12))
     main.add(BoldStaticTextRender((6, 6), main, "Game of Life", (255, 255, 255), 26))
     main.add(Button((739, 3), main, ASSETS_PATH / 'close.png', kill))
     main.add(TimeBarRender(centerCoord((15, 447), (378, 18), (99, 18)), main, logic))
+    main.add(PresetRender(main, board_render, logic.preset))
 
     logic.start()
     while RUNNING:

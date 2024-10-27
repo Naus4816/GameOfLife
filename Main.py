@@ -2,7 +2,8 @@ import pygame
 from logic.Board import Board
 from logic.Handler import LogicHandler
 from render.Utils import centerCoord
-from render.Components import Container, BoardRender, PresetRender, TpsRender, BoldStaticTextRender, Button, TimeBarRender, ASSETS_PATH
+from render.Components import Container, BoldStaticTextRender, Button, ASSETS_PATH
+from render.ComplexComponents import BoardRender, TpsRender, TimeBarRender, PresetContainer
 import win32api
 import win32con
 import win32gui
@@ -30,13 +31,13 @@ if __name__ == '__main__':
     BACKGROUND_COLOR = (12, 90, 1)
     win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(*BACKGROUND_COLOR), 0, win32con.LWA_COLORKEY)
 
-    board = Board(True, False, 185, 185)
+    # board = Board(True, False, 185, 185)
+    board = Board(False, False, 185 // 2, 185 // 2)
     Board.background_color = 33
 
     # initialise the logic handler with the board
     # running = True
     logic = LogicHandler(board)
-    logic.nextPreset()
 
     # create the main container
     main = Container.fromScreen(screen, ASSETS_PATH / 'background.png')
@@ -46,10 +47,14 @@ if __name__ == '__main__':
     main.add(BoldStaticTextRender((6, 6), main, "Game of Life", (255, 255, 255), 26))
     main.add(Button((739, 3), main, ASSETS_PATH / 'close.png', kill))
     main.add(TimeBarRender(centerCoord((15, 447), (378, 18), (99, 18)), main, logic))
-    main.add(PresetRender(main, board_render, logic.preset))
+    main.add(PresetContainer((405, 39), main, board_render))
 
     logic.start()
     while RUNNING:
+        # process key press in individual events for granular use
+        for event in pygame.event.get([pygame.KEYDOWN]):
+            pygame.event.post(pygame.event.Event(pygame.USEREVENT + event.key))
+            pygame.event.post(event)  # post the original event back to the queue
         # handle the events
         main.handleEvents()
         for event in pygame.event.get():

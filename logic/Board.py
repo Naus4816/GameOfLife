@@ -179,7 +179,7 @@ class Preset(Board):
     name: str
     saved_location: Path
 
-    def __new__(cls, src: Path | Board, _: str):
+    def __new__(cls, src: Path | np.ndarray, _: str):
         """
         Create a new preset from a file or a board.
         :param src: path to the file or the board to crop
@@ -194,12 +194,23 @@ class Preset(Board):
             cropped = src[max(min(x) - 1, 0):max(x) + 2, max(min(y) - 1, 0):max(y) + 2]
             return cropped.view(cls)
 
-    def __init__(self, src: Path | Board, name: str):
+    def __init__(self, src: Path | np.ndarray, name: str):
         super().__init__(False)
         self.name = name
         self.getImage(True)
         if isinstance(src, Path):
             self.saved_location = src
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, other):
+        if not isinstance(other, Preset):
+            return False
+        return self.name == other.name
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def save(self, path: Path):
         """
@@ -218,4 +229,10 @@ class Preset(Board):
         self.saved_location.unlink()
         del self.saved_location
         print(f'Deleted preset {self.name}')
+
+    def rotate(self):
+        """
+        Rotate the preset by 90 degrees.
+        """
+        return Preset(np.rot90(self, k=-1), self.name)
 

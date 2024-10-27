@@ -1,10 +1,7 @@
 import pygame
 import math
 from pathlib import Path
-from render.Utils import fitRatio, centerCoord, mouseIn
-from logic.Board import Board, Preset
-from logic.Handler import LogicHandler
-from threading import Thread
+from render.Utils import fitRatio, centerCoord, mouseIn, cropText
 
 ASSETS_PATH = Path(__file__).parent.parent / 'assets'
 FONT_PATH: Path = ASSETS_PATH / 'font.ttf'
@@ -46,12 +43,13 @@ class Container(ScaledChild):
     background: pygame.Surface
     children: list[Child]
 
-    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...], parent: 'Container', path: Path):
+    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...] | None, parent: 'Container', path: Path):
         bg = pygame.image.load(str(path))
+        if size is None:  # consider a 1:1 background with its parent
+            size = bg.get_size()
         super().__init__(coord, size, bg.get_size(), parent)
         self.background = pygame.transform.scale(bg, tuple(int(x * self.ratio) for x in bg.get_size()))
         self.children = []
-        self.coord = centerCoord(self.coord, size, self.background.get_size())
 
     @staticmethod
     def fromScreen(screen: pygame.Surface, path: Path) -> 'Container':
@@ -78,13 +76,25 @@ class Container(ScaledChild):
         for child in self.children:
             child.render(screen)
 
+    def clear(self, type: type = None):
+        if type is None:
+            self.children.clear()
+            return
+        self.children = [c for c in self.children if not isinstance(c, type)]
+
+    def get(self, type: type = None) -> list:
+        if type is None:
+            return self.children
+        return [c for c in self.children if isinstance(c, type)]
+
 
 class StaticTextRender(Child):
     text: pygame.Surface
 
     def __init__(self, coord: tuple[int, ...], parent: 'Container',
-                 text: str, color: tuple[int, int, int], font_size: int = 36):
+                 text: str, color: tuple[int, int, int], font_size: int = 36, max_width: int = 0):
         font = pygame.font.Font(str(FONT_PATH), font_size)
+        text = text if max_width == 0 else cropText(text, font, max_width)
         self.text = font.render(text, False, color)
         size = self.text.get_size()
         super().__init__(coord, size, parent)
@@ -98,9 +108,10 @@ class BoldStaticTextRender(StaticTextRender):
     under_text: pygame.Surface
 
     def __init__(self, coord: tuple[int, ...], parent: 'Container',
-                 text: str, color: tuple[int, int, int], font_size: int = 36):
-        super().__init__(coord, parent, text, color, font_size)
+                 text: str, color: tuple[int, int, int], font_size: int = 36, max_width: int = 0):
         font = pygame.font.Font(str(FONT_PATH), font_size)
+        text = text if max_width == 0 else cropText(text, font, max_width)
+        super().__init__(coord, parent, text, color, font_size)
         self.under_text = font.render(text, False, (0, 0, 0))
         self.under_text = pygame.transform.scale(self.under_text, self.size)
 
@@ -113,16 +124,20 @@ class DynamicTextRender(Child):
     font: pygame.font.Font
     color: tuple[int, int, int]
     text_getter: callable
+    max_width: int
 
     def __init__(self, coord: tuple[int, ...], parent: 'Container',
-                 color: tuple[int, int, int], text_getter: callable, font_size: int = 36):
+                 color: tuple[int, int, int], text_getter: callable, font_size: int = 36, max_width: int = 0):
         self.color = color
         self.text_getter = text_getter
         self.font = pygame.font.Font(str(FONT_PATH), font_size)
+        self.max_width = max_width
         super().__init__(coord, (0, 0), parent)
 
     def render(self, screen: pygame.Surface):
-        text = self.font.render(self.text_getter(), False, self.color)
+        content = self.text_getter()
+        content = content if self.max_width == 0 else cropText(content, self.font, self.max_width)
+        text = self.font.render(content, False, self.color)
         size = tuple(int(s * self.parent.ratio) for s in text.get_size())
         text = pygame.transform.scale(text, size)
         screen.blit(text, self.coord)
@@ -131,7 +146,9 @@ class DynamicTextRender(Child):
 class BoldDynamicTextRender(DynamicTextRender):
 
     def render(self, screen: pygame.Surface):
-        text = self.font.render(self.text_getter(), False, (0, 0, 0))
+        content = self.text_getter()
+        content = content if self.max_width == 0 else cropText(content, self.font, self.max_width)
+        text = self.font.render(content, False, (0, 0, 0))
         size = tuple(int(s * self.parent.ratio) for s in text.get_size())
         text = pygame.transform.scale(text, size)
         screen.blit(text, (self.coord[0] + 2, self.coord[1] + 2))
@@ -143,12 +160,15 @@ class Button(Child):
     hover: pygame.Surface
     click: pygame.Surface = None
     disable: pygame.Surface = None
+    dark_text: pygame.Surface = None
+    light_text: pygame.Surface = None
+    background_size: tuple[int, int]
     callback: callable
     can_interact: bool = True
     disabled: bool = False
 
     def __init__(self, coord: tuple[int, ...], parent: 'Container', path: Path, callback: callable,
-                 has_pressed: bool = True, disabled: bool = False):
+                 has_pressed: bool = True, disabled: bool = False, text: str = None):
         image = Button.getVariant(path, 'base')  # used to get the size
         super().__init__(coord, image.get_size(), parent)
         self.callback = callback
@@ -162,6 +182,15 @@ class Button(Child):
                 self.disable = pygame.transform.scale(Button.getVariant(path, 'disable'), self.size)
             except FileNotFoundError:
                 print('ignoring disable texture as it was not found')
+        if text is not None:
+            b_w, b_h = image.get_size()
+            font = pygame.font.Font(str(FONT_PATH), b_h - 10)
+            text = cropText(text, font, b_w - 6)
+            self.light_text = font.render(text, False, (255, 255, 255))
+            self.dark_text = font.render(text, False, (0, 0, 0))
+            size = tuple(int(s * self.parent.ratio) for s in self.light_text.get_size())
+            self.light_text = pygame.transform.scale(self.light_text, size)
+            self.dark_text = pygame.transform.scale(self.dark_text, size)
 
     @staticmethod
     def getVariant(path: Path, variant: str) -> pygame.Surface:
@@ -182,8 +211,50 @@ class Button(Child):
             return self.click if pygame.mouse.get_pressed()[0] and self.click is not None else self.hover
         return self.base
 
+    @property
+    def foreground(self) -> tuple[pygame.surface, tuple[int, ...]] | None:
+        if self.light_text is None:
+            return None
+        coord = centerCoord(
+            self.coord,
+            self.size,
+            self.light_text.get_size()
+        )
+        if self.disabled or (mouseIn(self.coord, self.size) and pygame.mouse.get_pressed()[0]):
+            return self.light_text, coord
+        return self.dark_text, coord
+
     def render(self, screen: pygame.Surface):
         screen.blit(self.background, self.coord)
+        if self.foreground:
+            screen.blit(*self.foreground)
+
+
+class RadioButton(Button):
+    selected: bool
+    selected_base: pygame.Surface
+
+    def __init__(self, coord: tuple[int, ...], parent: 'Container', path: Path,
+                 callback: callable, selected: bool = False, disabled: bool = False, text: str = None):
+        self.selected = selected
+        super().__init__(coord, parent, path, callback, False, disabled, text)
+        self.selected_base = pygame.transform.scale(Button.getVariant(path, 'selected'), self.size)
+
+    def handleEvents(self):
+        if not mouseIn(self.coord, self.size) or self.disabled or self.selected:
+            return
+        for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
+            if event.button == 1:
+                self.selected = True
+                self.callback()
+
+    @property
+    def background(self) -> pygame.Surface:
+        if self.disabled and self.disable:
+            return self.disable
+        if mouseIn(self.coord, self.size) and not self.disabled and not self.selected:
+            return self.hover
+        return self.selected_base if self.selected else self.base
 
 
 class ToggleButton(Button):
@@ -191,9 +262,15 @@ class ToggleButton(Button):
     on_base: pygame.Surface
     on_hover: pygame.Surface
 
-    def __init__(self, coord: tuple[int, ...], parent: 'Container', path: Path, callback: callable, on: bool = False):
+    def __init__(self, coord: tuple[int, ...], parent: 'Container', path: Path,
+                 callback: callable, on: bool = False, disabled: bool = False, text: str = None):
         self.on = on
-        super().__init__(coord, parent, path.parent / f'{path.stem}_off{path.suffix}', callback, False)
+        super().__init__(
+            coord, parent,
+            path.parent / f'{path.stem}_off{path.suffix}',
+            callback, False,
+            disabled, text
+        )
         self.on_base = pygame.transform.scale(Button.getVariant(path, 'on_base'), self.size)
         self.on_hover = pygame.transform.scale(Button.getVariant(path, 'on_hover'), self.size)
 
@@ -207,150 +284,21 @@ class ToggleButton(Button):
 
     @property
     def background(self) -> pygame.Surface:
+        if self.disabled and self.disable:
+            return self.disable
         if mouseIn(self.coord, self.size) and not self.disabled:
             return self.on_hover if self.on else self.hover
         return self.on_base if self.on else self.base
 
-
-class TimeBarRender(Child):
-    logic: LogicHandler
-    # store children in a list with play_pause, step, speed_1, speed_2, speed_3, supper_fast
-    children: tuple[ToggleButton, Button, ToggleButton, ToggleButton, ToggleButton, ToggleButton]
-
-    def __init__(self, coord: tuple[int, ...], parent: 'Container', logic: LogicHandler):
-        self.logic = logic
-        x, y = coord
-        self.children = (
-            ToggleButton((x, y), parent, ASSETS_PATH / 'play_pause.png', self.toggle, True),
-            Button((x + 21, y), parent, ASSETS_PATH / 'step.png', self.step, False, True),
-            ToggleButton((x + 42, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(5), True),
-            ToggleButton((x + 55, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(10), True),
-            ToggleButton((x + 68, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(20)),
-            ToggleButton((x + 81, y), parent, ASSETS_PATH / 'super_speed.png', self.speedSetter(100))
+    @property
+    def foreground(self) -> tuple[pygame.surface, tuple[int, ...]] | None:
+        if self.light_text is None:
+            return None
+        coord = centerCoord(
+            self.coord,
+            self.size,
+            self.light_text.get_size()
         )
-        super().__init__(coord, (99, 18), parent)
-
-    def handleEvents(self):
-        for child in self.children:
-            child.handleEvents()
-
-    def render(self, screen: pygame.Surface):
-        for child in self.children:
-            child.render(screen)
-
-    def toggle(self, on: bool):
-        self.setSpeed(self.logic.tick_rate if on else 0)
-
-    def step(self):
-        # only step when the board is paused
-        if self.logic.paused.locked():
-            self.logic.board.tick()
-        else:
-            self.children[1].disabled = True
-
-    def setSpeed(self, tick_rate: int):
-        if tick_rate == 0:  # stop instead
-            self.logic.pause()
-            self.children[0].on = False
-            self.children[1].disabled = False
-            for child in self.children[2:]:
-                child.on = False
-            return
-
-        # set the correct states for each toggle and disable stepping
-        self.logic.tick_rate = tick_rate
-
-        # set states for each buttons
-        self.children[0].on = True
-        self.children[1].disabled = True
-        self.children[2].on = tick_rate >= 5
-        self.children[3].on = tick_rate >= 10
-        self.children[4].on = tick_rate >= 20
-        self.children[5].on = tick_rate == 100
-
-        # make sure to resume if previously paused
-        if self.logic.isPaused():
-            self.logic.resume()
-
-    def speedSetter(self, tick_rate: int) -> callable:
-        """
-        returns a function that handles speed changes
-        :param tick_rate: the tick rate to set the board to
-        :return: a function that will be used as callback
-        """
-        return lambda x: self.setSpeed(tick_rate) \
-            if x or self.logic.tick_rate > tick_rate else \
-            self.setSpeed(next(s for s in [100, 20, 10, 5, 0] if s < tick_rate))
-
-
-class TpsRender(BoldDynamicTextRender):
-    logic: LogicHandler
-
-    def __init__(self, coord: tuple[int, ...], parent: 'Container', logic: LogicHandler, font_size: int = 36):
-        self.logic = logic
-        super().__init__(coord, parent, (255, 255, 255), lambda: f'{self.logic.current_tps:.2f} TPS', font_size)
-
-
-class BoardRender(ScaledChild):
-    board: Board | Preset
-
-    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...],
-                 parent: 'Container', board: Board | Preset):
-        self.board = board
-        super().__init__(coord, size, board.getSize(), parent)
-        parent.add(BoldStaticTextRender(  # add title to parent with relative pos
-            (coord[0]-4, coord[1]-25), parent,
-            board.name if isinstance(board, Preset) else 'New Board',
-            (255, 255, 255), 18)
-        )
-
-    def render(self, screen: pygame.Surface):
-        image = self.board.getImage()
-        pyg_image = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
-        screen.blit(pygame.transform.scale(pyg_image, self.size), self.coord)
-
-
-class PresetRender(BoardRender):
-    referer: 'BoardRender'
-
-    def __init__(self, parent: 'Container', referer: 'BoardRender', preset: Preset):
-        self.referer = referer
-        super().__init__((0, 0), preset.getSize(), parent, preset)
-        self.ratio = referer.ratio
-        self.size = tuple(math.floor(s * self.ratio) for s in preset.getSize())
-
-    def handleEvents(self):
-        if not mouseIn(*self.placement_box):
-            return
-        for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
-            if event.button == 1:
-                Thread(target=lambda: self.referer.board.paste(self.board, *self.relative_coord)).start()
-
-    def render(self, screen: pygame.Surface):
-        if not mouseIn(*self.placement_box):
-            return
-        image = self.board.getImage()
-        pyg_image = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
-        screen.blit(pygame.transform.scale(pyg_image, self.size), self.snap_coord)
-
-    @property
-    def placement_box(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
-        p_x, p_y = self.referer.coord
-        p_w, p_h = self.referer.size
-        width, height = self.size
-        return (p_x + width, p_y + height), (p_w - width, p_h - height)
-
-    @property
-    def relative_coord(self):
-        x, y = pygame.mouse.get_pos()
-        p_x, p_y = self.referer.coord
-        ratio = self.referer.ratio
-        c_w, c_h = self.board.getSize()
-        return math.floor((x - p_x) / ratio) - c_w, math.floor((y - p_y) / ratio) - c_h
-
-    @property
-    def snap_coord(self):
-        p_x, p_y = self.referer.coord
-        ratio = self.referer.ratio
-        r_x, r_y = self.relative_coord
-        return math.ceil(r_x * ratio) + p_x, math.ceil(r_y * ratio) + p_y
+        if self.on:
+            return self.light_text, coord
+        return self.dark_text, coord

@@ -26,3 +26,23 @@ def mouseIn(coord: tuple[int, ...], size: tuple[int, ...]) -> bool:
     min_x, min_y = coord
     max_x, max_y = tuple(c + s for c, s in zip(coord, size))
     return min_x <= x <= max_x and min_y <= y <= max_y
+
+
+def cropText(text: str, font: pygame.font.Font, width: int) -> str:
+    """
+    Crop the text to fit the width.
+    """
+    if font.size(text)[0] <= width:
+        return text
+    while font.size(text + '...')[0] > width:
+        new_text = text.rsplit(' ', 1)[0]
+        if new_text == text:
+            break
+        text = new_text
+    else:
+        return text + '...'
+    while font.size(text + '...')[0] > width:
+        if len(text) == 0:
+            return '...'
+        text = text[:-1]
+    return text + '...'

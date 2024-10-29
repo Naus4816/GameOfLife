@@ -20,12 +20,12 @@ class TimeBarRender(Child):
         self.logic = logic
         x, y = coord
         self.children = (
-            ToggleButton((x, y), parent, ASSETS_PATH / 'play_pause.png', self.toggle, True),
-            Button((x + 21, y), parent, ASSETS_PATH / 'step.png', self.step, False, True),
-            ToggleButton((x + 42, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(5), True),
-            ToggleButton((x + 55, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(10), True),
-            ToggleButton((x + 68, y), parent, ASSETS_PATH / 'speed.png', self.speedSetter(20)),
-            ToggleButton((x + 81, y), parent, ASSETS_PATH / 'super_speed.png', self.speedSetter(100))
+            ToggleButton((x, y), parent, ASSETS_PATH / 'toggles' / 'play_pause.png', self.toggle, True),
+            Button((x + 21, y), parent, ASSETS_PATH / 'buttons' / 'step.png', self.step, False, True),
+            ToggleButton((x + 42, y), parent, ASSETS_PATH / 'toggles' / 'speed.png', self.speedSetter(5), True),
+            ToggleButton((x + 55, y), parent, ASSETS_PATH / 'toggles' / 'speed.png', self.speedSetter(10), True),
+            ToggleButton((x + 68, y), parent, ASSETS_PATH / 'toggles' / 'speed.png', self.speedSetter(20)),
+            ToggleButton((x + 81, y), parent, ASSETS_PATH / 'toggles' / 'super_speed.png', self.speedSetter(100))
         )
         super().__init__(coord, (99, 18), parent)
 
@@ -187,24 +187,24 @@ class PresetContainer(Container):
         self.referer = referer
         self.left_arrow = Button(
             (6, 91), self,
-            ASSETS_PATH / 'left_arrow.png',
+            ASSETS_PATH / 'buttons' / 'left_arrow.png',
             lambda: self.changePage(self.current_page - 1),
             disabled=True
         )
         self.right_arrow = Button(
             (328, 91), self,
-            ASSETS_PATH / 'right_arrow.png',
+            ASSETS_PATH / 'buttons' / 'right_arrow.png',
             lambda: self.changePage(self.current_page + 1),
             disabled=True
         )
         self.pencil = ToggleButton(
             (375, 447), referer.parent,
-            ASSETS_PATH / 'edit.png',
+            ASSETS_PATH / 'toggles' / 'edit.png',
             self.presetSetter('__pencil__')
         )
         self.eraser = ToggleButton(
             (354, 447), referer.parent,
-            ASSETS_PATH / 'erase.png',
+            ASSETS_PATH / 'toggles' / 'erase.png',
             self.presetSetter('__eraser__')
         )
         referer.parent.add(self.pencil)
@@ -235,14 +235,14 @@ class PresetContainer(Container):
             elem.add(BoardRender((10, 31), (126, 126), elem, preset))
             elem.add(ToggleButton(
                 (6, 164), elem,
-                ASSETS_PATH / 'select.png',
+                ASSETS_PATH / 'toggles' / 'select.png',
                 self.presetSetter(preset.name),
                 on=self.preset is not None and self.preset == preset,
                 text='Select'
             ))
             elem.add(Button(
                 (122, 164), elem,
-                ASSETS_PATH / 'delete.png',
+                ASSETS_PATH / 'buttons' / 'delete.png',
                 self.presetDeleter(preset.name)
             ))
         self.left_arrow.disabled = self.current_page == 0

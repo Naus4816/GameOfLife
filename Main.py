@@ -46,7 +46,7 @@ if __name__ == '__main__':
     main.add(board_render)
     main.add(TpsRender((19, 70), main, logic, 12))
     main.add(BoldStaticTextRender((6, 6), main, "Game of Life", (255, 255, 255), 26))
-    main.add(Button((739, 3), main, ASSETS_PATH / 'close.png', kill))
+    main.add(Button((739, 3), main, ASSETS_PATH / 'buttons' / 'close.png', kill))
     main.add(TimeBarRender(centerCoord((15, 447), (378, 18), (99, 18)), main, logic))
     main.add(PresetContainer((405, 39), main, board_render))
 

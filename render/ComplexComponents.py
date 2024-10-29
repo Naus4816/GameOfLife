@@ -199,12 +199,12 @@ class PresetContainer(Container):
         )
         self.pencil = ToggleButton(
             (375, 447), referer.parent,
-            ASSETS_PATH / 'edit.png',  # TODO
+            ASSETS_PATH / 'edit.png',
             self.presetSetter('__pencil__')
         )
         self.eraser = ToggleButton(
             (354, 447), referer.parent,
-            ASSETS_PATH / 'erase.png',  # TODO
+            ASSETS_PATH / 'erase.png',
             self.presetSetter('__eraser__')
         )
         referer.parent.add(self.pencil)

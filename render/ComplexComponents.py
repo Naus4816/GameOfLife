@@ -111,7 +111,7 @@ class BoardRender(ScaledChild):
         super().__init__(coord, size, board.getSize(), parent)
         parent.add(BoldStaticTextRender(  # add title to parent with relative pos
             (coord[0]-4, coord[1]-25), parent,
-            board.name if isinstance(board, Preset) else 'New Bord with very long name',
+            board.name if isinstance(board, Preset) else 'New Bord',
             (255, 255, 255), 18,
             size[0] + 8
         ))
@@ -177,6 +177,8 @@ class PresetContainer(Container):
     right_preset: Container | None
     left_arrow: Button
     right_arrow: Button
+    pencil: ToggleButton
+    eraser: ToggleButton
 
     def __init__(self, coord: tuple[int, ...], parent: 'Container', referer: BoardRender):
         super().__init__(coord, None, parent, ASSETS_PATH / 'preset_container.png')
@@ -195,6 +197,18 @@ class PresetContainer(Container):
             lambda: self.changePage(self.current_page + 1),
             disabled=True
         )
+        self.pencil = ToggleButton(
+            (375, 447), referer.parent,
+            ASSETS_PATH / 'edit.png',  # TODO
+            self.presetSetter('__pencil__')
+        )
+        self.eraser = ToggleButton(
+            (354, 447), referer.parent,
+            ASSETS_PATH / 'erase.png',  # TODO
+            self.presetSetter('__eraser__')
+        )
+        referer.parent.add(self.pencil)
+        referer.parent.add(self.eraser)
 
         self.presets = []
         self.loadPresets()
@@ -257,14 +271,27 @@ class PresetContainer(Container):
         self.referer.parent.clear(type=PresetRender)
         if name is None:
             self.preset = None
-            return
+        elif name.startswith('__'):
+            preset = np.zeros((3, 3), dtype=bool)
+            if name == '__pencil__':
+                preset[1, 1] = True
 
-        self.preset = next((p for p in self.presets if p.name == name), None)
+            preset = Preset(preset, name)
+            if name == '__eraser__':
+                preset.refresh()
+                preset.background_color = (108, 0, 0)
+                preset.getImage(False)
+
+            self.preset = preset
+        else:
+            self.preset = next((p for p in self.presets if p.name == name), None)
         if self.preset is not None:
             self.referer.parent.add(PresetRender(self, self.referer, self.preset))
-            for child in [self.left_preset, self.right_preset]:
-                if child is not None:
-                    child.get(type=ToggleButton)[0].on = self.preset == child.get(type=BoardRender)[0].board
+        self.pencil.on = name == '__pencil__'
+        self.eraser.on = name == '__eraser__'
+        for child in [self.left_preset, self.right_preset]:
+            if child is not None:
+                child.get(type=ToggleButton)[0].on = self.preset == child.get(type=BoardRender)[0].board
 
     def rotatePreset(self):
         if self.preset is None:

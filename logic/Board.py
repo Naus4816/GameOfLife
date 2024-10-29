@@ -1,6 +1,6 @@
 import numpy as np
 from numba import cuda
-from PIL import Image
+from PIL import Image, ImageOps
 from typing import Callable
 from pathlib import Path
 from threading import Lock
@@ -83,15 +83,15 @@ class Board(np.ndarray):
 
     @staticmethod
     @cuda.jit
-    def grayscale(board, gray, width: int, height: int, transparent: bool = False, bg_color: int = 0):
+    def image(board, gray, width: int, height: int, transparent: bool, bg_r, bg_g, bg_b):
         """
-        Converts the board to a grayscale image.
+        Converts the board to an Image image.
         """
         x, y = cuda.grid(2)
         if 0 < x < width - 1 and 0 < y < height - 1:
-            value = 255 if board[x, y] else 33
-            for i in range(3):
-                gray[x-1, y-1, i] = value
+            gray[x-1, y-1, 0] = 255 if board[x, y] else bg_r
+            gray[x-1, y-1, 1] = 255 if board[x, y] else bg_r
+            gray[x-1, y-1, 2] = 255 if board[x, y] else bg_r
             if transparent:
                 gray[x-1, y-1, 3] = 255 if board[x, y] else 0
 
@@ -102,6 +102,7 @@ class Board(np.ndarray):
         """
         if self.image is not None:
             return self.image
+        bg = self.background_color
 
         # first convert the board to a grayscale image
         if self.use_gpu:
@@ -110,20 +111,24 @@ class Board(np.ndarray):
                 cuda.to_device(self),
                 cuda.device_array((*self.getSize(), 4 if is_transparent else 3), dtype=np.uint8),
                 self.shape,
-                Board.grayscale,
+                Board.image,
                 is_transparent,
-                self.background_color
+                *(bg if isinstance(bg, tuple) else (bg, bg, bg))
             )
             mode = 'RGBA' if is_transparent else 'RGB'
             self.image = Image.fromarray(img_data, mode=mode)
         else:
             img_data = self.astype(np.uint8) * 255
-            # set custom background color
-            if not is_transparent and self.background_color != 0:
+            # set custom background color if single grayscale value
+            if not is_transparent and isinstance(bg, int) and bg != 0:
                 img_data[img_data == 0] = self.background_color
             # create the grayscale image and crop the borders
             image = Image.fromarray(img_data, mode='L').crop((1, 1, self.shape[0] - 1, self.shape[1] - 1))
-            self.image = image.convert('RGB')
+            # colorize the image if background is a color
+            if not is_transparent and isinstance(bg, tuple):
+                self.image = ImageOps.colorize(image, black=bg, white=(255, 255, 255))
+            else:
+                self.image = image.convert('RGB')
             # add alpha channel if needed just by using the same image as alpha
             if is_transparent:
                 self.image.putalpha(image)
@@ -149,7 +154,7 @@ class Board(np.ndarray):
         Paste another board on top of this one.
         """
         self.tick_lock.acquire()
-        self[x:x + other.shape[0], y:y + other.shape[1]] = other
+        self[x + 1:x + other.shape[0] - 1, y + 1:y + other.shape[1] - 1] = other[1:-1, 1:-1]
         self.refresh()
         self.tick_lock.release()
 
@@ -191,7 +196,10 @@ class Preset(Board):
         # Crop the given board to fit its content that is alive.
         else:
             x, y = np.where(src)
-            cropped = src[max(min(x) - 1, 0):max(x) + 2, max(min(y) - 1, 0):max(y) + 2]
+            if x and y:
+                cropped = src[max(min(x) - 1, 0):max(x) + 2, max(min(y) - 1, 0):max(y) + 2]
+            else:
+                cropped = src
             return cropped.view(cls)
 
     def __init__(self, src: Path | np.ndarray, name: str):

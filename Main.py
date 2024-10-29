@@ -20,6 +20,7 @@ if __name__ == '__main__':
     pygame.init()
     pygame.display.set_caption("Game of Life")
     screen = pygame.display.set_mode((1532, 960), pygame.NOFRAME)
+    pygame.display.set_icon(pygame.image.load(ASSETS_PATH / 'icon.png'))
     clock = pygame.time.Clock()
 
     # Make window transparent see https://stackoverflow.com/questions/550001/fully-transparent-windows-in-pygame
@@ -32,7 +33,7 @@ if __name__ == '__main__':
     win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(*BACKGROUND_COLOR), 0, win32con.LWA_COLORKEY)
 
     # board = Board(True, False, 185, 185)
-    board = Board(False, False, 185 // 2, 185 // 2)
+    board = Board(True, False, 185, 185)
     Board.background_color = 33
 
     # initialise the logic handler with the board

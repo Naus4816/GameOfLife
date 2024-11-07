@@ -184,7 +184,7 @@ class Preset(Board):
     name: str
     saved_location: Path
 
-    def __new__(cls, src: Path | np.ndarray, _: str):
+    def __new__(cls, src: Path | np.ndarray, _: str, crop: bool = False, __: bool = False):
         """
         Create a new preset from a file or a board.
         :param src: path to the file or the board to crop
@@ -196,14 +196,14 @@ class Preset(Board):
         # Crop the given board to fit its content that is alive.
         else:
             x, y = np.where(src)
-            if x and y:
+            if crop and len(x) > 0 and len(y) > 0:
                 cropped = src[max(min(x) - 1, 0):max(x) + 2, max(min(y) - 1, 0):max(y) + 2]
             else:
                 cropped = src
             return cropped.view(cls)
 
-    def __init__(self, src: Path | np.ndarray, name: str):
-        super().__init__(False)
+    def __init__(self, src: Path | np.ndarray, name: str, _: bool = False, try_cuda: bool = False):
+        super().__init__(try_cuda)
         self.name = name
         self.getImage(True)
         if isinstance(src, Path):
@@ -220,15 +220,19 @@ class Preset(Board):
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def save(self, path: Path):
+    def save(self, path: Path, name: str = None, make_preset: bool = True):
         """
         Save the preset to a file.
         """
         if not path.exists():
             path.mkdir()
-        path = path / f'{self.name}.preset'
+        name = name if name is not None else self.name
+        ext = '.preset' if make_preset else '.board'
+        path = path / f'{name}{ext}'
         print(f'Saving preset to {path}')
+        self.tick_lock.acquire()
         np.savetxt(path, self, fmt='%d')
+        self.tick_lock.release()
 
     def delete(self):
         """

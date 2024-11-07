@@ -1,7 +1,10 @@
+import uuid
+from uuid import UUID
+
 import pygame
 import math
 from pathlib import Path
-from render.Utils import fitRatio, centerCoord, mouseIn, cropText
+from render.Utils import fitRatio, centerCoord, mouseIn, cropText, scaledImage, scaledTab
 
 ASSETS_PATH = Path(__file__).parent.parent / 'assets'
 FONT_PATH: Path = ASSETS_PATH / 'font.ttf'
@@ -12,17 +15,32 @@ class Child:
     size: tuple[int, ...]
     parent: 'Container'
     can_interact: bool = False
+    uuid: UUID
 
     def __init__(self, coord: tuple[int, ...], size: tuple[int, ...], parent: 'Container'):
         self.parent = parent
         self.size = tuple(math.floor(s * parent.ratio) for s in size)
         self.coord = tuple(math.floor(s * parent.ratio) + p for s, p in zip(coord, parent.coord))
+        self.uuid = uuid.uuid4()
 
     def handleEvents(self):
         pass
 
     def render(self, screen: pygame.Surface):
         pass
+
+    @property
+    def rect(self) -> tuple:
+        return *self.coord, *self.size
+
+    def cleanup(self):
+        self.parent.children.remove(self)
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.uuid == other.uuid
+
+    def __hash__(self):
+        return hash(self.uuid)
 
 
 class ScaledChild(Child):
@@ -43,8 +61,10 @@ class Container(ScaledChild):
     background: pygame.Surface
     children: list[Child]
 
-    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...] | None, parent: 'Container', path: Path):
-        bg = pygame.image.load(str(path))
+    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...] | None,
+                 parent: 'Container', bg: Path | pygame.Surface):
+        if isinstance(bg, Path):
+            bg = pygame.image.load(str(bg))
         if size is None:  # consider a 1:1 background with its parent
             size = bg.get_size()
         super().__init__(coord, size, bg.get_size(), parent)
@@ -53,16 +73,17 @@ class Container(ScaledChild):
 
     @staticmethod
     def fromScreen(screen: pygame.Surface, path: Path) -> 'Container':
+        container: Container = Container.unit(screen.get_size())
+        return Container(container.coord, container.size, container, path)
+
+    @staticmethod
+    def unit(size: tuple = (0, 0)) -> 'Container':
         container: Container = object.__new__(Container)
         container.__class__ = Container
         container.coord = (0, 0)
-        container.size = screen.get_size()
+        container.size = size
         container.ratio = 1
-        return Container(container.coord, container.size, container, path)
-
-    @property
-    def can_interact(self) -> bool:
-        return any(i for i in self.children)
+        return container
 
     def handleEvents(self):
         for child in self.children[::-1]:
@@ -302,3 +323,101 @@ class ToggleButton(Button):
         if self.on:
             return self.light_text, coord
         return self.dark_text, coord
+
+
+class Input(Child):
+    font: pygame.font.Font
+    on_validate: callable
+    suggestion: str
+    text: str
+    max_width: int
+    editing: bool
+    bg: pygame.Surface
+    bg_edit: pygame.Surface
+
+    def __init__(self, coord: tuple[int, ...], parent: 'Container', on_validate: callable, suggestion: str, max_width: int, font_size: int = 36):
+        self.font = pygame.font.Font(str(FONT_PATH), font_size)
+        self.on_validate = on_validate
+        self.suggestion = suggestion
+        self.text = ''
+        self.max_width = max_width
+        self.editing = False
+        bg_size = (max_width + 6, font_size + 6)
+        super().__init__(coord, bg_size, parent)
+        self.bg = pygame.surface.Surface(bg_size)
+        self.bg.fill((160, 160, 160))
+        pygame.draw.rect(self.bg, (0, 0, 0), (1, 1, bg_size[0] - 2, bg_size[1] - 2))
+        self.bg = pygame.transform.scale(self.bg, self.size)
+
+        self.bg_edit = pygame.surface.Surface(bg_size)
+        self.bg_edit.fill((252, 252, 252))
+        pygame.draw.rect(self.bg_edit, (0, 0, 0), (1, 1, bg_size[0] - 2, bg_size[1] - 2))
+        self.bg_edit = pygame.transform.scale(self.bg_edit, self.size)
+
+    def handleEvents(self):
+        # enter editing context
+        if not self.editing and mouseIn(self.coord, self.size):
+            for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
+                if event.button == 1:
+                    self.editing = True
+
+        # quit editing context
+        elif self.editing and not mouseIn(self.coord, self.size):
+            for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
+                if event.button == 1:
+                    self.editing = False
+                pygame.event.post(event)  # might get consumed by button click
+
+        if self.editing:
+            for event in pygame.event.get([pygame.KEYDOWN]):
+                if (pygame.K_a <= event.key <= pygame.K_z
+                        or pygame.K_0 <= event.key <= pygame.K_9
+                        or event.key in [pygame.K_SPACE, pygame.K_UNDERSCORE]):
+                    self.text += event.unicode
+                elif event.key == pygame.K_BACKSPACE:
+                    self.text = self.text[:-1]
+                elif event.key == pygame.K_RETURN:
+                    self.editing = False
+                    self.on_validate(self.text)
+                else:  # resubmit unused events
+                    pygame.event.post(event)
+                    continue
+                # consume key specific event
+                pygame.event.get([pygame.USEREVENT + event.key])
+
+    def visibleRect(self, text_surface: pygame.Surface) -> tuple[int, int, int, int]:
+        if not self.editing:
+            return (
+                0,
+                0,
+                min(text_surface.get_size()[0], math.floor(self.max_width * self.parent.ratio)),
+                text_surface.get_size()[1]
+            )
+        return (
+            max(0, text_surface.get_size()[0] - math.floor(self.max_width * self.parent.ratio)),
+            0,
+            text_surface.get_size()[0],
+            text_surface.get_size()[1]
+        )
+
+    def render(self, screen: pygame.Surface):
+        screen.blit(self.bg_edit if self.editing else self.bg, self.coord)
+
+        content = self.suggestion if len(self.text) == 0 else self.text
+
+        under_text = self.font.render(content, False, (62, 62, 62))
+        text = self.font.render(content, False, (91, 91, 91) if len(self.text) == 0 else (252, 252, 252))
+        size = tuple(int(s * self.parent.ratio) for s in text.get_size())
+        under_text = pygame.transform.scale(under_text, size)
+        text = pygame.transform.scale(text, size)
+
+        screen.blit(
+            under_text,
+            tuple(c + 5 * self.parent.ratio for c in self.coord),
+            self.visibleRect(under_text)
+        )
+        screen.blit(
+            text,
+            tuple(c + 3 * self.parent.ratio for c in self.coord),
+            self.visibleRect(text)
+        )

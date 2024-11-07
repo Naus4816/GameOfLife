@@ -1,12 +1,12 @@
 import pygame
 import math
 import numpy as np
-from render.Utils import mouseIn
+from render.Utils import mouseIn, centerCoord
 from logic.Board import Board, Preset
 from logic.Handler import LogicHandler
 from threading import Thread
 from pathlib import Path
-from render.Components import Child, Container, BoldStaticTextRender, Button, ToggleButton, BoldDynamicTextRender, ScaledChild, ASSETS_PATH
+from render.Components import Child, Container, BoldStaticTextRender, Button, ToggleButton, BoldDynamicTextRender, ScaledChild, Input, ASSETS_PATH
 
 DATA_PATH = Path(__file__).parent.parent / 'data'
 
@@ -27,6 +27,7 @@ class TimeBarRender(Child):
             ToggleButton((x + 68, y), parent, ASSETS_PATH / 'toggles' / 'speed.png', self.speedSetter(20)),
             ToggleButton((x + 81, y), parent, ASSETS_PATH / 'toggles' / 'super_speed.png', self.speedSetter(100))
         )
+        self.setStates(not self.logic.isPaused())
         super().__init__(coord, (99, 18), parent)
 
     def handleEvents(self):
@@ -62,26 +63,27 @@ class TimeBarRender(Child):
     def setSpeed(self, tick_rate: int):
         if tick_rate == 0:  # stop instead
             self.logic.pause()
-            self.children[0].on = False
-            self.children[1].disabled = False
-            for child in self.children[2:]:
-                child.on = False
+            self.setStates(False)
             return
 
-        # set the correct states for each toggle and disable stepping
         self.logic.tick_rate = tick_rate
-
-        # set states for each buttons
-        self.children[0].on = True
-        self.children[1].disabled = True
-        self.children[2].on = tick_rate >= 5
-        self.children[3].on = tick_rate >= 10
-        self.children[4].on = tick_rate >= 20
-        self.children[5].on = tick_rate == 100
+        self.setStates(True)
 
         # make sure to resume if previously paused
         if self.logic.isPaused():
             self.logic.resume()
+
+    def setStates(self, running: bool):
+        # set the correct states for each toggle and disable stepping
+        tick_rate = self.logic.tick_rate
+
+        # set states for each buttons
+        self.children[0].on = running
+        self.children[1].disabled = running
+        self.children[2].on = tick_rate >= 5 and running
+        self.children[3].on = tick_rate >= 10 and running
+        self.children[4].on = tick_rate >= 20 and running
+        self.children[5].on = tick_rate == 100 and running
 
     def speedSetter(self, tick_rate: int) -> callable:
         """
@@ -111,7 +113,7 @@ class BoardRender(ScaledChild):
         super().__init__(coord, size, board.getSize(), parent)
         parent.add(BoldStaticTextRender(  # add title to parent with relative pos
             (coord[0]-4, coord[1]-25), parent,
-            board.name if isinstance(board, Preset) else 'New Bord',
+            board.name if isinstance(board, Preset) else 'New Board',
             (255, 255, 255), 18,
             size[0] + 8
         ))
@@ -214,6 +216,7 @@ class PresetContainer(Container):
         self.loadPresets()
 
     def loadPresets(self):
+        self.presets.clear()
         for file in DATA_PATH.glob('*.preset'):
             self.presets.append(Preset(file, file.stem))
             print(f'Loaded preset {file.stem}')
@@ -314,3 +317,67 @@ class PresetContainer(Container):
             if child is None:
                 continue
             child.render(screen)
+
+
+class SavePopup(Container):
+    input_element: Input
+    make_preset: ToggleButton
+    referer: BoardRender
+    on_board_saved: callable
+    on_presets_saved: callable
+
+    def __init__(self, parent: 'Container', referer: 'BoardRender', on_board_saved: callable, on_presets_saved: callable):
+        coord = centerCoord((19, 70), (378, 378), (308, 72))
+        self.referer = referer
+        self.on_board_saved = on_board_saved
+        self.on_presets_saved = on_presets_saved
+        super().__init__(coord, None, parent, ASSETS_PATH / 'save_popup.png')
+
+        self.input_element = Input(
+            (82, 27), self,
+            lambda text: self.save(),
+            referer.board.name if isinstance(referer.board, Preset) else '*',
+            214, 12
+        )
+        self.input_element.editing = True  # start editing immediately
+
+        self.make_preset = ToggleButton(
+            (6, 48), self,
+            ASSETS_PATH / 'toggles' / 'edit.png',
+            lambda x: None
+        )
+
+        self.add(BoldStaticTextRender((6, 6), self, 'Save File', (255, 255, 255), 18))
+        self.add(Button((287, 1), self, ASSETS_PATH / 'buttons' / 'exit.png', self.close))
+        self.add(BoldStaticTextRender((6, 28), self, 'Name:', (255, 255, 255), 16))
+        self.add(self.input_element)
+        self.add(self.make_preset)
+        self.add(Button((284, 48), self, ASSETS_PATH / 'buttons' / 'save.png', self.save))
+        parent.add(self)
+
+    def handleEvents(self):
+        super().handleEvents()
+        for event in pygame.event.get([pygame.MOUSEBUTTONDOWN]):
+            if event.button == 1 and not mouseIn(self.coord, self.size):
+                self.close()
+        pygame.event.get()  # clear the event queue
+
+    def close(self):
+        self.parent.children.remove(self)
+
+    def save(self):
+        board = self.referer.board
+        name = self.input_element.text
+        if not isinstance(board, Preset) and len(name) > 0:
+            board = Preset(board, name, self.make_preset.on, not self.make_preset.on and board.use_gpu)
+        elif name == '':
+            name = board.name
+        else:
+            return
+        board.save(DATA_PATH, name, self.make_preset.on)
+
+        if not self.make_preset.on:
+            self.on_board_saved(board)
+        else:
+            self.on_presets_saved()
+        self.close()

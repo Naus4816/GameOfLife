@@ -1,4 +1,5 @@
 import pygame
+from pathlib import Path
 
 
 def fitRatio(parent_shape: tuple[int, ...], fit_shape: tuple[int, ...]) -> float:
@@ -46,3 +47,48 @@ def cropText(text: str, font: pygame.font.Font, width: int) -> str:
             return '...'
         text = text[:-1]
     return text + '...'
+
+
+def scaledImage(child_size: tuple[int, int],
+                bg_folder: Path, bg_color: tuple[int, int, int],
+                bg_margin: int = 2, margin: int = 6) -> pygame.Surface:
+    """
+    Creates a scaled background image.
+    """
+    element_names = ('top_left', 'top_right', 'bottom_left', 'bottom_right', 'top', 'bottom', 'left', 'right')
+    elements = [pygame.image.load(bg_folder / f'{name}.png') for name in element_names]
+    width, height = tuple(c + (margin * 2) for c in child_size)
+    thick = elements[0].get_width()
+    image = pygame.surface.Surface((width, height), pygame.SRCALPHA)
+    pygame.draw.rect(image, bg_color, (bg_margin, bg_margin, width - bg_margin * 2, height - bg_margin * 2))
+    image.blit(elements[0], (0, 0))
+    image.blit(elements[1], (width - thick, 0))
+    image.blit(elements[2], (0, height - thick))
+    image.blit(elements[3], (width - thick, height - thick))
+    image.blit(pygame.transform.scale(elements[4], (width - thick * 2, thick)),(thick, 0))
+    image.blit(pygame.transform.scale(elements[5], (width - thick * 2, thick)),(thick, height - thick))
+    image.blit(pygame.transform.scale(elements[6], (thick, height - thick * 2)),(0, thick))
+    image.blit(pygame.transform.scale(elements[7], (thick, height - thick * 2)),(width - thick, thick))
+    return image
+
+
+def scaledTab(child_size: tuple[int, int],
+              bg_folder: Path, bg_color: tuple[int, int, int],
+              bg_margin: int = 2, margin: int = 6) -> pygame.Surface:
+    """
+    Creates a scaled tab background image.
+    """
+    element_names = ('top_left', 'top_right', 'bottom_left', 'bottom_right', 'top', 'left', 'right')
+    elements = [pygame.image.load(bg_folder / f'{name}.png') for name in element_names]
+    width, height = tuple(c + (margin * 2) for c in child_size)
+    thick = elements[0].get_width()
+    image = pygame.surface.Surface((width, height), pygame.SRCALPHA)
+    pygame.draw.rect(image, bg_color, (bg_margin, bg_margin, width - bg_margin * 2, height - bg_margin))
+    image.blit(elements[0], (0, 0))
+    image.blit(elements[1], (width - thick, 0))
+    image.blit(elements[2], (0, height - thick))
+    image.blit(elements[3], (width - thick, height - thick))
+    image.blit(pygame.transform.scale(elements[4], (width - thick * 2, thick)), (thick, 0))
+    image.blit(pygame.transform.scale(elements[5], (thick, height - thick * 2)), (0, thick))
+    image.blit(pygame.transform.scale(elements[6], (thick, height - thick * 2)), (width - thick, thick))
+    return image

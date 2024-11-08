@@ -370,7 +370,7 @@ class SavePopup(Container):
         name = self.input_element.text
         if not isinstance(board, Preset) and len(name) > 0:
             board = Preset(board, name, self.make_preset.on, not self.make_preset.on and board.use_gpu)
-        elif name == '':
+        elif isinstance(board, Preset) and len(name) == 0:
             name = board.name
         else:
             return

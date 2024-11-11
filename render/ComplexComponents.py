@@ -106,6 +106,7 @@ class TpsRender(BoldDynamicTextRender):
 
 class BoardRender(ScaledChild):
     board: Board | Preset
+    resized_content: tuple[int, ...]
 
     def __init__(self, coord: tuple[int, ...], size: tuple[int, ...],
                  parent: 'Container', board: Board | Preset):
@@ -118,10 +119,14 @@ class BoardRender(ScaledChild):
             size[0] + 8
         ))
 
+        self.resized_content = tuple(math.floor(s * self.ratio) for s in board.getSize())
+        self.coord = centerCoord(self.coord, self.size, self.resized_content)
+
     def render(self, screen: pygame.Surface):
         image = self.board.getImage()
         pyg_image = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
-        screen.blit(pygame.transform.scale(pyg_image, self.size), self.coord)
+        pyg_image = pygame.transform.scale(pyg_image, self.resized_content)
+        screen.blit(pyg_image, self.coord)
 
 
 class PresetRender(BoardRender):

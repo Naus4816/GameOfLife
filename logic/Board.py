@@ -142,13 +142,13 @@ class Board(np.ndarray):
     @cuda.jit
     def image(board, gray, width: int, height: int, transparent: bool, bg_r, bg_g, bg_b):
         """
-        Converts the board to an Image image.
+        Converts the board to an Image.
         """
         x, y = cuda.grid(2)
         if 0 < x < width - 1 and 0 < y < height - 1:
             gray[x-1, y-1, 0] = 255 if board[x, y] else bg_r
-            gray[x-1, y-1, 1] = 255 if board[x, y] else bg_r
-            gray[x-1, y-1, 2] = 255 if board[x, y] else bg_r
+            gray[x-1, y-1, 1] = 255 if board[x, y] else bg_g
+            gray[x-1, y-1, 2] = 255 if board[x, y] else bg_b
             if transparent:
                 gray[x-1, y-1, 3] = 255 if board[x, y] else 0
 
@@ -166,7 +166,7 @@ class Board(np.ndarray):
             # compute the image values on the GPU
             img_data = Board.runOnGpu(
                 cuda.to_device(self),
-                cuda.device_array((*self.getSize(), 4 if is_transparent else 3), dtype=np.uint8),
+                cuda.device_array((self.getSize()[1], self.getSize()[0], 4 if is_transparent else 3), dtype=np.uint8),
                 self.shape,
                 Board.image,
                 is_transparent,
@@ -180,7 +180,7 @@ class Board(np.ndarray):
             if not is_transparent and isinstance(bg, int) and bg != 0:
                 img_data[img_data == 0] = self.background_color
             # create the grayscale image and crop the borders
-            image = Image.fromarray(img_data, mode='L').crop((1, 1, self.shape[0] - 1, self.shape[1] - 1))
+            image = Image.fromarray(img_data, mode='L').crop((1, 1, self.shape[1] - 1, self.shape[0] - 1))
             # colorize the image if background is a color
             if not is_transparent and isinstance(bg, tuple):
                 self.image = ImageOps.colorize(image, black=bg, white=(255, 255, 255))

@@ -8,6 +8,8 @@ import win32api
 import win32con
 import win32gui
 
+BACKGROUND_COLOR = (12, 90, 1)
+
 
 class Interface:
     running: bool
@@ -105,8 +107,8 @@ class Interface:
                 pass  # consume remaining events
 
             # display the main container
-            screen.fill(BACKGROUND_COLOR)
-            self.main.render(screen)
+            self.screen.fill(BACKGROUND_COLOR)
+            self.main.render(self.screen)
 
             # flip to refresh the screen
             pygame.display.flip()
@@ -123,7 +125,7 @@ class Interface:
         self.running = False
 
 
-if __name__ == '__main__':
+def run():
     pygame.init()
     pygame.display.set_caption("Game of Life")
     screen = pygame.display.set_mode((1532, 960), pygame.NOFRAME)
@@ -135,7 +137,6 @@ if __name__ == '__main__':
     win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE,
                            win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE) | win32con.WS_EX_LAYERED)
     # Set window transparency color
-    BACKGROUND_COLOR = (12, 90, 1)
     win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(*BACKGROUND_COLOR), 0, win32con.LWA_COLORKEY)
 
     # board = Board(True, False, 185, 185)
@@ -143,3 +144,7 @@ if __name__ == '__main__':
 
     # create interface instance given the screen, clock, logic handler, and board
     Interface(screen, 144, LogicHandler(), Board(True, True, 185, 185)).run()
+
+
+if __name__ == '__main__':
+    run()

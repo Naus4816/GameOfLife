@@ -440,17 +440,19 @@ class Graph(Child):
             self.last_images = None
             self.visible = True
 
-        def show(self):
+        def changeVisibility(self, visible: bool):
+            self.visible = visible
             self.last_images = None
-            self.visible = True
-
-        def hide(self):
-            self.last_images = None
-            self.visible = False
 
         def push(self, point: int):
             self.data.append(point)
-            self.last_images = None
+            # Remove some old data if too much
+            if len(self.data) > 5000:
+                self.data.pop(0)
+
+            # Reset the image cache if needed
+            if self.visible:
+                self.last_images = None
 
         def getImage(self, chart_size: tuple[int, ...], bounds: tuple[float, float, float, float], x_data: list[int]) -> pygame.Surface:
             if self.last_images is not None:
@@ -521,7 +523,7 @@ class Graph(Child):
         # draw background
         screen.blit(self.bg, self.coord)
 
-        if len(self.x_set.data) < 2:
+        if len(self.x_set.data) < 1 or all(not s.visible or len(s.data) < 1 for s in self.y_sets):
             return
 
         # draw data lines
@@ -532,6 +534,9 @@ class Graph(Child):
 
         y_min = min(0, min([min(s.data[-data_points:]) for s in self.y_sets if s.visible and len(s.data) > 0]))
         y_max = max([max(s.data[-data_points:]) * s.max_percent for s in self.y_sets if s.visible and len(s.data) > 0])
+        if y_min == y_max:
+            y_max += 1
+            y_min -= 0.01
         for s in self.y_sets:
             screen.blit(s.getImage(self.chart_size, (x_min, x_max, y_min, y_max), x_data), self.chart_coord)
 

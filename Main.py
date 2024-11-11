@@ -2,7 +2,7 @@ import pygame
 from logic.Board import Board
 from logic.Handler import LogicHandler
 from render.Utils import centerCoord
-from render.Components import Container, BoldStaticTextRender, Button, Graph, ASSETS_PATH
+from render.Components import Container, BoldStaticTextRender, Button, Graph, ToggleButton, ASSETS_PATH
 from render.ComplexComponents import BoardRender, TpsRender, TimeBarRender, PresetContainer, SavePopup
 import win32api
 import win32con
@@ -80,6 +80,17 @@ class Interface:
             5, 2, 8
         ))
 
+        # add toggle buttons
+        self.main.add(BoldStaticTextRender((411, 251), self.main, "Datasets", (255, 255, 255), 14))
+        self.main.add(BoldStaticTextRender((411, 403), self.main, "Tick", (255, 255, 255), 14))
+        self.main.add(BoldStaticTextRender((411, 420), self.main, "Time", (255, 255, 255), 14))
+        self.main.add(ToggleButton((423, 272), self.main, ASSETS_PATH / 'toggles' / 'checkbox.png', lambda x: alive_dataset.changeVisibility(x), True))
+        self.main.add(BoldStaticTextRender((440, 276), self.main, "Alive", (255, 255, 255), 8))
+        self.main.add(ToggleButton((423, 291), self.main, ASSETS_PATH / 'toggles' / 'checkbox.png', lambda x: births_dataset.changeVisibility(x), True))
+        self.main.add(BoldStaticTextRender((440, 295), self.main, "Births", (255, 255, 255), 8))
+        self.main.add(ToggleButton((423, 310), self.main, ASSETS_PATH / 'toggles' / 'checkbox.png', lambda x: deaths_dataset.changeVisibility(x), True))
+        self.main.add(BoldStaticTextRender((440, 314), self.main, "Deaths", (255, 255, 255), 8))
+
     def run(self):
         self.logic.start()
         clock = pygame.time.Clock()
@@ -131,4 +142,4 @@ if __name__ == '__main__':
     Board.background_color = 33
 
     # create interface instance given the screen, clock, logic handler, and board
-    Interface(screen, clock, LogicHandler(), Board(True, False, 185, 185)).run()
+    Interface(screen, 144, LogicHandler(), Board(True, True, 185*16, 185*16)).run()

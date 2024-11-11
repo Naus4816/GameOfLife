@@ -121,12 +121,16 @@ class Board(np.ndarray):
         self.tick_lock.acquire()
         start = time.time()
         if self.use_gpu:  # use cuda if available (determined at init)
-            self[...] = Board.runOnGpu(
+            self.new_board[...] = Board.runOnGpu(
                 cuda.to_device(self),
                 cuda.to_device(self.new_board),
                 self.shape,
                 Board.updateGpu
             )
+            # destroys optimisation on huge grids :(
+            self.trackers['births'].update(int((self.new_board & ~self).sum()))
+            self.trackers['deaths'].update(int((~self.new_board & self).sum()))
+            self[...] = self.new_board
         else:
             self.updateCPU()
 

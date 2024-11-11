@@ -1,9 +1,43 @@
+import time
 import numpy as np
 from numba import cuda
 from PIL import Image, ImageOps
 from typing import Callable
 from pathlib import Path
 from threading import Lock
+from render.Components import Graph
+
+
+class DataTracker:
+    """
+    DataTracker is a class that tracks the data of the board.
+    """
+    dataset: Graph.DataSet | None
+    value: int | float
+
+    def __init__(self):
+        self.dataset = None
+        self.value = 0
+
+    def update(self, val: int | float):
+        """
+        Update the value of the tracker.
+        """
+        self.value = val
+        if self.dataset is not None:
+            self.dataset.push(self.value)
+
+    def increase(self, val: int | float):
+        """
+        Increase the value of the tracker.
+        """
+        self.update(self.value + val)
+
+    def setDataSet(self, ds: Graph.DataSet):
+        """
+        Set the dataset of the tracker.
+        """
+        self.dataset = ds
 
 
 class Board(np.ndarray):
@@ -15,6 +49,7 @@ class Board(np.ndarray):
     new_board: np.ndarray
     background_color: int = 0
     tick_lock: Lock
+    trackers: dict[str, DataTracker]
 
     def __new__(cls, _: bool, random: bool, height: int, width: int):
         width, height = width + 2, height + 2
@@ -29,10 +64,22 @@ class Board(np.ndarray):
         # Create a lock to make sure the board is not updated while ticking
         self.tick_lock = Lock()
 
+        self.trackers = {k: DataTracker() for k in ['generation', 'time', 'alive', 'births', 'deaths']}
+
         self.image = None
         self.use_gpu = try_cuda and cuda.is_available()
         if try_cuda and not self.use_gpu:
             print("CUDA is not available, defaulting to CPU instead.")
+
+    def setTrackers(self, **kwargs: Graph.DataSet):
+        """
+        defines specific the trackers for the board.
+        """
+        for k, v in kwargs.items():
+            if k in self.trackers:
+                self.trackers[k].setDataSet(v)
+            else:
+                print(f'Tracker {k} not found')
 
     def updateCPU(self):
         """
@@ -41,6 +88,9 @@ class Board(np.ndarray):
         for i, j in np.ndindex(self.shape):
             alive_count = self.countAlive(i, j)
             self.new_board[i, j] = alive_count in [2, 3] if self[i, j] else alive_count == 3
+
+        self.trackers['births'].update(int((self.new_board & ~self).sum()))
+        self.trackers['deaths'].update(int((~self.new_board & self).sum()))
         self[...] = self.new_board
 
     def countAlive(self, i: int, j: int) -> bool:
@@ -69,6 +119,7 @@ class Board(np.ndarray):
         Ticks the board to compute next state.
         """
         self.tick_lock.acquire()
+        start = time.time()
         if self.use_gpu:  # use cuda if available (determined at init)
             self[...] = Board.runOnGpu(
                 cuda.to_device(self),
@@ -78,6 +129,12 @@ class Board(np.ndarray):
             )
         else:
             self.updateCPU()
+
+        # update the trackers
+        self.trackers['alive'].update(self.getAliveCount())
+        self.trackers['time'].update(time.time() - start)
+        self.trackers['generation'].increase(1)
+
         self.refresh()
         self.tick_lock.release()
 
@@ -168,7 +225,7 @@ class Board(np.ndarray):
         """
         Get the amount of alive cells in the board.
         """
-        return self.sum()
+        return int(self.sum())
 
     def refresh(self):
         """

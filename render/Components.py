@@ -1,3 +1,4 @@
+import time
 import uuid
 from uuid import UUID
 
@@ -421,3 +422,162 @@ class Input(Child):
             tuple(c + 3 * self.parent.ratio for c in self.coord),
             self.visibleRect(text)
         )
+
+
+class Graph(Child):
+    class DataSet:
+        data: list[int]
+        color: tuple[int, int, int]
+        span_x: float
+        max_percent: float
+        last_images: pygame.Surface | None
+        visible: bool
+
+        def __init__(self, data: list[int] = None, color: tuple[int, int, int] = None, max_percent: float = None):
+            self.data = [] if data is None else data
+            self.color = color
+            self.max_percent = 1 + (0 if max_percent is None else max_percent)
+            self.last_images = None
+            self.visible = True
+
+        def show(self):
+            self.last_images = None
+            self.visible = True
+
+        def hide(self):
+            self.last_images = None
+            self.visible = False
+
+        def push(self, point: int):
+            self.data.append(point)
+            self.last_images = None
+
+        def getImage(self, chart_size: tuple[int, ...], bounds: tuple[float, float, float, float], x_data: list[int]) -> pygame.Surface:
+            if self.last_images is not None:
+                return self.last_images
+            image = pygame.surface.Surface(chart_size, pygame.SRCALPHA)
+            image.fill((0, 0, 0, 0))
+            if not self.visible:
+                self.last_images = image
+                return image
+
+            x_scale = chart_size[0] / (bounds[1] - bounds[0])
+            y_scale = chart_size[1] / (bounds[3] - bounds[2]) if bounds[3] - bounds[2] != 0 else 1
+
+            last_point = None
+            for x, y in zip(x_data[::-1], self.data[::-1]):
+                x = math.floor((x - bounds[0]) * x_scale)
+                y = math.floor((bounds[3] - y) * y_scale)
+                point = (x, y)
+                if last_point is not None:
+                    pygame.draw.line(image, self.color, last_point, point, 2)
+                last_point = point
+
+            self.last_images = image
+            return image
+
+    x_set: DataSet
+    span_x: int
+    y_sets: list[DataSet]
+    bg: pygame.Surface
+    font: pygame.font.Font
+    chart_coord: tuple[int, ...]
+    chart_size: tuple[int, ...]
+    x_label_count: int
+    y_label_count: int
+
+    def __init__(self, coord: tuple[int, ...], size: tuple[int, ...], parent: 'Container',
+                 x_set: DataSet, span_x, y_sets: list[DataSet],
+                 x_label_count: int, y_label_count: int,
+                 font_size: int = 36
+                 ):
+        super().__init__(coord, size, parent)
+        self.x_set = x_set
+        self.span_x = span_x
+        self.y_sets = y_sets
+        self.x_label_count = x_label_count
+        self.y_label_count = y_label_count
+        self.bg = pygame.surface.Surface(self.size, pygame.SRCALPHA)
+        self.bg.fill((0, 0, 0, 0))
+        self.font = pygame.font.Font(str(FONT_PATH), font_size)
+
+        example_text = self.font.render('000.0', False, (192, 192, 192))
+        borders = list(math.floor(o * self.parent.ratio) for o in (5, 5, 5, 2))
+        borders[0] += example_text.get_size()[0]
+        borders[1] += example_text.get_size()[1]
+        rect = (
+            borders[0],
+            borders[3],
+            self.size[0] - borders[0] - borders[2],
+            self.size[1] - borders[1] - borders[3]
+        )
+        pygame.draw.rect(self.bg, (255, 255, 255), (rect[0] - 2, rect[1] - 2, rect[2] + 4, rect[3] + 4), 2)
+        pygame.draw.rect(self.bg, (0, 0, 0, 0), (rect[0], rect[1] - 2, rect[2] + 2, rect[3] + 2))
+
+        self.chart_coord = (self.coord[0] + borders[0], self.coord[1] + borders[3])
+        self.chart_size = tuple(s - l - r for s, l, r in zip(self.size, borders[0:2], borders[2:4]))
+
+    def render(self, screen: pygame.Surface):
+        # draw background
+        screen.blit(self.bg, self.coord)
+
+        if len(self.x_set.data) < 2:
+            return
+
+        # draw data lines
+        x_min = max(0, max(self.x_set.data) - self.span_x)
+        x_max = x_min + self.span_x
+        x_data = [d for d in self.x_set.data if x_min <= d <= x_max]
+        data_points = len(x_data)
+
+        y_min = min(0, min([min(s.data[-data_points:]) for s in self.y_sets if s.visible and len(s.data) > 0]))
+        y_max = max([max(s.data[-data_points:]) * s.max_percent for s in self.y_sets if s.visible and len(s.data) > 0])
+        for s in self.y_sets:
+            screen.blit(s.getImage(self.chart_size, (x_min, x_max, y_min, y_max), x_data), self.chart_coord)
+
+        # X draw labels
+        for coord, value in Graph.getLabels(self.chart_size[0], x_min, x_max, self.x_label_count + 1):
+            x_text = self.font.render(value, False, (192, 192, 192))
+            screen.blit(
+                x_text,
+                (
+                    self.chart_coord[0] + coord - x_text.get_size()[0] / 2,
+                    self.chart_coord[1] + self.chart_size[1] + (3 * self.parent.ratio) + 2
+                )
+            )
+
+        # Y draw labels
+        for coord, value in Graph.getLabels(self.chart_size[1], y_min, y_max, self.y_label_count + 1):
+            y_text = self.font.render(value, False, (192, 192, 192))
+            screen.blit(
+                y_text,
+                (
+                    self.chart_coord[0] - y_text.get_size()[0] - 2 - 3 * self.parent.ratio,
+                    self.chart_coord[1] + self.chart_size[1] - coord
+                )
+            )
+
+    @staticmethod
+    def getLabels(width, min_value: float, max_value: float, count: int) -> list[(int, str)]:
+        step = width / count
+        value_step = (max_value - min_value) / count
+        labels = []
+        for i in range(count + 1):
+            coord = math.floor(i * step)
+            value = min_value + i * value_step
+            labels.append((coord, Graph.formattedValue(value)))
+        return labels
+
+    @staticmethod
+    def formattedValue(value: float) -> str:
+        if value > 1000000:
+            return str(round(value / 1000000, 1)) + 'M'
+        if value > 1000:
+            return str(round(value / 1000, 1)) + 'k'
+        if value > 100:
+            return str(round(value))
+        if value < 0.1:
+            return str(round(value, 3))
+        if value < 1:
+            return str(round(value, 2))
+        return str(round(value, 1))

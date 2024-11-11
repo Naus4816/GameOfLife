@@ -2,8 +2,8 @@ import pygame
 from logic.Board import Board
 from logic.Handler import LogicHandler
 from render.Utils import centerCoord
-from render.Components import Container, BoldStaticTextRender, Button, ASSETS_PATH
-from render.ComplexComponents import BoardRender, TpsRender, TimeBarRender, PresetContainer, SavePopup, PresetRender
+from render.Components import Container, BoldStaticTextRender, Button, Graph, ASSETS_PATH
+from render.ComplexComponents import BoardRender, TpsRender, TimeBarRender, PresetContainer, SavePopup
 import win32api
 import win32con
 import win32gui
@@ -12,15 +12,15 @@ import win32gui
 class Interface:
     running: bool
     main: Container
+    fps: int
     screen: pygame.Surface
-    clock: pygame.time.Clock
-    board: Board
     logic: LogicHandler
+    board: Board
 
-    def __init__(self, screen, clock, logic, board: Board = None):
+    def __init__(self, screen, fps, logic, board: Board = None):
         self.running = True
         self.screen = screen
-        self.clock = clock
+        self.fps = fps
         self.logic = logic
         self.setBoard(board)
 
@@ -54,8 +54,35 @@ class Interface:
         ))
         self.main.add(Button((35, 447), self.main, ASSETS_PATH / 'buttons' / 'quit.png', lambda: self.setBoard(None)))
 
+        # add graphs
+        generation_dataset = Graph.DataSet()
+        time_dataset = Graph.DataSet(color=(120, 120, 120))
+        alive_dataset = Graph.DataSet(color=(0, 120, 0), max_percent=0.2)
+        births_dataset = Graph.DataSet(color=(0, 0, 120), max_percent=0.2)
+        deaths_dataset = Graph.DataSet(color=(120, 0, 0), max_percent=0.2)
+        self.board.setTrackers(
+            generation=generation_dataset,
+            time=time_dataset,
+            alive=alive_dataset,
+            births=births_dataset,
+            deaths=deaths_dataset
+        )
+        self.main.add(Graph(
+            (530, 270), (217, 111), self.main,
+            generation_dataset, 200,
+            [alive_dataset, births_dataset, deaths_dataset],
+            5, 5, 8
+        ))
+        self.main.add(Graph(
+            (530, 407), (217, 54), self.main,
+            generation_dataset, 300,
+            [time_dataset],
+            5, 2, 8
+        ))
+
     def run(self):
         self.logic.start()
+        clock = pygame.time.Clock()
         while self.running:
             # process key press in individual events for granular use
             for event in pygame.event.get([pygame.KEYDOWN]):
@@ -72,7 +99,7 @@ class Interface:
 
             # flip to refresh the screen
             pygame.display.flip()
-            clock.tick(144)
+            clock.tick(self.fps)
 
         # stop the logic handler if blocked at pause
         # otherwise the program will wait for the iteration to finish
@@ -90,7 +117,6 @@ if __name__ == '__main__':
     pygame.display.set_caption("Game of Life")
     screen = pygame.display.set_mode((1532, 960), pygame.NOFRAME)
     pygame.display.set_icon(pygame.image.load(ASSETS_PATH / 'icon.png'))
-    clock = pygame.time.Clock()
 
     # Make window transparent see https://stackoverflow.com/questions/550001/fully-transparent-windows-in-pygame
     # Create layered window

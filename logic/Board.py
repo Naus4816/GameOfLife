@@ -37,6 +37,8 @@ class DataTracker:
         """
         Set the dataset of the tracker.
         """
+        if self.dataset is not None:
+            ds.data = self.dataset.data
         self.dataset = ds
 
 

@@ -142,4 +142,4 @@ if __name__ == '__main__':
     Board.background_color = 33
 
     # create interface instance given the screen, clock, logic handler, and board
-    Interface(screen, 144, LogicHandler(), Board(True, True, 185*16, 185*16)).run()
+    Interface(screen, 144, LogicHandler(), Board(True, True, 185, 185)).run()

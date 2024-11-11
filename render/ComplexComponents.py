@@ -374,7 +374,11 @@ class SavePopup(Container):
         board = self.referer.board
         name = self.input_element.text
         if not isinstance(board, Preset) and len(name) > 0:
-            board = Preset(board, name, self.make_preset.on, not self.make_preset.on and board.use_gpu)
+            new_board = Preset(board, name, self.make_preset.on, not self.make_preset.on and board.use_gpu)
+            for k, v in board.trackers.items():
+                new_board.setTrackers(**{k: v.dataset})
+                new_board.trackers[k].value = v.value
+            board = new_board
         elif isinstance(board, Preset) and len(name) == 0:
             name = board.name
         else:
